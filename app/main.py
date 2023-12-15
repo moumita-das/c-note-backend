@@ -70,16 +70,21 @@ async def save_lyrics_and_chords(req: schemas.NotesSchema, db: Session = Depends
     return JSONResponse({"message": "success"}, status_code=200)
 
 
-@app.get('/fetch_all_saved_chords', response_model=List[schemas.NotesSchema])
-def fetch_all_saved_chords(id: Optional[str] = None, db: Session = Depends(get_db)):
+@app.get('/fetch_all_saved_chords', response_model=List[schemas.AllNotesSchema])
+def fetch_all_saved_chords(db: Session = Depends(get_db)):
     """
     Get all the Items stored in database
     """
-    if id:
-        items = []
-        db_item = crud.NotesCrud.fetch_by_name(db, id)
-        items.append(db_item)
-        return items
-    else:
-        items = crud.NotesCrud.fetch_all(db)
-        return items
+    items = crud.NotesCrud.fetch_all(db)
+    return items
+
+@app.get('/fetch_song_by_id', response_model=schemas.NotesSchema)
+def fetch_song_by_id(id: Optional[str] = None, db: Session = Depends(get_db)):
+    """
+    Get all the Items stored in database
+    """
+    items = []
+    db_item = crud.NotesCrud.fetch_by_id(db, id)
+    items.append(db_item)
+    return items[0]
+   
