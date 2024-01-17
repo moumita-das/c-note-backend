@@ -4,9 +4,8 @@ from . import models, schemas
 
 class NotesCrud:
     async def create(db: Session, item: schemas.NotesSchema):
-        print(item)
         db_item = models.NotesModel(title=item.title, lyrics_chords=item.lyrics_chords,
-                                    strum=item.strum, capo=item.capo, recording=item.recording)
+                                    strum=item.strum, capo=item.capo, recording=item.recording, chords=item.chords)
         db.add(db_item)
         db.commit()
         db.refresh(db_item)

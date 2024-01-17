@@ -12,3 +12,4 @@ class NotesModel(Base):
     strum = Column(String(100))
     capo = Column(Integer)
     recording = Column(String)
+    chords = Column(String)

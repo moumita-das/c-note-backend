@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 import glob
 import json
 import os
+import re
 from pydub import AudioSegment
 
 
@@ -66,6 +67,7 @@ def fetch_sound_for_strum(req: schemas.StrumInputSchema):
 
 @app.post('/save_lyrics_and_chords')
 async def save_lyrics_and_chords(req: schemas.NotesSchema, db: Session = Depends(get_db)):
+    req.chords = ",".join(find_chords_in_song(req.lyrics_chords))
     await crud.NotesCrud.create(db=db, item=req)
     return JSONResponse({"message": "success"}, status_code=200)
 
@@ -78,6 +80,7 @@ def fetch_all_saved_chords(db: Session = Depends(get_db)):
     items = crud.NotesCrud.fetch_all(db)
     return items
 
+
 @app.get('/fetch_song_by_id', response_model=schemas.NotesSchema)
 def fetch_song_by_id(id: Optional[str] = None, db: Session = Depends(get_db)):
     """
@@ -87,4 +90,42 @@ def fetch_song_by_id(id: Optional[str] = None, db: Session = Depends(get_db)):
     db_item = crud.NotesCrud.fetch_by_id(db, id)
     items.append(db_item)
     return items[0]
-   
+
+
+def find_chords_in_song(lyrics):
+    lyrics = json.loads(lyrics)
+    known_chords = ["C", "C7", "Cm", "Cm7", "Cdim", "Caug", "C6", "Cmaj7", "C9",
+                    "Db", "Db7", "Dbm", "Dbm7", "Dbdim", "Dbaug", "Db6", "Dbmaj7", "Db9",
+                    "D", "D7", "Dm", "Dm7", "Ddim", "Daug", "D6", "Dmaj7", "D9",
+                    "Eb", "Eb7", "Ebm", "Ebm7", "Ebdim", "Ebaug", "Eb6", "Ebmaj7", "Eb9",
+                    "E", "E7", "Em", "Em7", "Edim", "Eaug", "E6", "Emaj7", "E9",
+                    "F", "F7", "Fm", "Fm7", "Fdim", "Faug", "F6", "Fmaj7", "F9",
+                    "Gb", "Gb7", "Gbm", "Gbm7", "Gbdim", "Gbaug", "Gb6", "Gbmaj7", "Gb9",
+                    "G", "G7", "Gm", "Gm7", "Gdim", "Gaug", "G6", "Gmaj7", "G9",
+                    "Ab", "Ab7", "Abm", "Abm7", "Abdim", "Abaug", "Ab6", "Abmaj7", "Ab9",
+                    "A", "A7", "Am", "Am7", "Adim", "Aaug", "A6", "Amaj7", "A9",
+                    "Bb", "Bb7", "Bbm", "Bbm7", "Bbdim", "Bbaug", "Bb6", "Bbmaj7", "Bb9",
+                    "B", "B7", "Bm", "Bm7", "Bdim", "Baug", "B6", "Bmaj7", "B9"]
+    chords_arr = []
+    for line in lyrics:
+        line = line['text']
+        # check if the format of the lyrics is of 1st type
+        total_length = len(line)
+        total_characters = len(line.replace(" ", ""))
+        total_spaces = total_length - total_characters
+        if total_spaces > total_characters:
+            chords_in_line = line.split(" ")
+            for chord in chords_in_line:
+                if chord in known_chords and chord not in chords_arr:
+                    chords_arr.append(chord)
+        else:
+            # check for second type, ie with brackets
+            line = line.replace('[', '(').replace(']', ')').replace(
+                '{', '(').replace('}', ')')
+            matches = re.findall(r'\(.*?\)', line)
+            if len(matches) > 0:
+                for chord in matches:
+                    chord = chord[1:len(chord)-1]
+                    if chord in known_chords and chord not in chords_arr:
+                        chords_arr.append(chord)
+    return chords_arr

@@ -16,14 +16,18 @@ class NotesSchema(BaseModel):
     strum: Union[str, None] = None
     capo: Union[int, None] = None
     recording: Union[str, None] = None
+    chords: Union[str, None] = None
 
     class Config:
         orm_mode = True
+
 
 class AllNotesSchema(BaseModel):
     id: Union[int, None] = None
     title: Union[str, None] = None
     strum: Union[str, None] = None
     capo: Union[int, None] = None
+    chords: Union[str, None] = None
+
     class Config:
         orm_mode = True
