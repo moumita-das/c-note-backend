@@ -31,3 +31,19 @@ class AllNotesSchema(BaseModel):
 
     class Config:
         orm_mode = True
+
+class UserSignupSchema(BaseModel):
+    id: Union[int, None] = None
+    email: Union[str, None] = None
+    password: Union[str, None] = None
+    first_name: Union[str, None] = None
+    last_name: Union[str, None] = None
+    otp:  Union[str, None] = None
+
+    class Config:
+        orm_mode = True
+
+class OtpTransactionSchema(BaseModel):
+    id: Union[int, None] = None
+    email: Union[str, None] = None
+    otp:  Union[str, None] = None

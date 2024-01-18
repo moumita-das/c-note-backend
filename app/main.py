@@ -8,10 +8,16 @@ from sqlalchemy.orm import Session
 
 import glob
 import json
-import os
+import os, traceback
 import re
 from pydub import AudioSegment
+import smtplib
+import random
+from email.mime.text import MIMEText
+from dotenv import load_dotenv, find_dotenv
 
+load_dotenv()
+print(os.path.join(os.getcwd(),'app','.env'))
 
 app = FastAPI()
 
@@ -21,6 +27,7 @@ origins = [
     "http://localhost.com",
     "https://localhost.com",
     "http://localhost:3000",
+    "http://localhost:3001",
     "http://localhost:8080",
 ]
 app.add_middleware(
@@ -129,3 +136,51 @@ def find_chords_in_song(lyrics):
                     if chord in known_chords and chord not in chords_arr:
                         chords_arr.append(chord)
     return chords_arr
+
+
+@app.post('/signup_user')
+def signup_user(req: schemas.UserSignupSchema):
+    pass
+
+@app.post('/send_otp')
+def send_otp(req: schemas.UserSignupSchema, db: Session = Depends(get_db)):
+    user_email = req.email
+    sender_email = os.environ.get("GMAIL_USERNAME")
+    sender_password=os.getenv("GMAIL_PASSWORD")
+    recipient_email = user_email
+    subject = "Hello from High-Notes"
+    otp = random.randint(100000,999999)
+    print(otp)
+    body = """
+    <html>
+        <body>
+            <p>Hi there, you are almost done with the signup process.</p>
+            <p>Please enter the below OTP to verify yourself in the website.</p>
+            <p>{otp}</p>
+        </body>
+    </html>
+    """.format(otp=otp)
+    try:
+        html_message = MIMEText(body, 'html')
+        html_message['Subject'] = subject
+        html_message['From'] = sender_email
+        html_message['To'] = recipient_email    
+        # with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+        #     server.login(sender_email, sender_password)
+        #     server.sendmail(sender_email, recipient_email, html_message.as_string())
+        crud.UsersCrud.record_otp(db, email=recipient_email, otp=otp)
+        return JSONResponse({"message": "success"}, status_code=200)
+    except:
+        print(traceback.format_exc())
+        return JSONResponse({"message": "failed"}, status_code=500)
+    
+@app.post('/verify_otp')
+def verify_otp(req: schemas.OtpTransactionSchema, db: Session = Depends(get_db)):
+    user_email = req.email
+    otp = req.otp
+    print(user_email, otp)
+    db_item = crud.UsersCrud.verify_otp(db,user_email, otp)
+    print(db_item)
+    
+
+    
