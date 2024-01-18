@@ -4,11 +4,14 @@ from fastapi.responses import FileResponse, JSONResponse
 from typing import Optional, List
 from .db import get_db, engine
 from . import schemas, models, crud
+from .auth import auth_handler
+
 from sqlalchemy.orm import Session
 
 import glob
 import json
-import os, traceback
+import os
+import traceback
 import re
 from pydub import AudioSegment
 import smtplib
@@ -17,11 +20,12 @@ from email.mime.text import MIMEText
 from dotenv import load_dotenv, find_dotenv
 
 load_dotenv()
-print(os.path.join(os.getcwd(),'app','.env'))
+print(os.path.join(os.getcwd(), 'app', '.env'))
 
 app = FastAPI()
 
 models.Base.metadata.create_all(bind=engine)
+
 
 origins = [
     "http://localhost.com",
@@ -142,14 +146,18 @@ def find_chords_in_song(lyrics):
 def signup_user(req: schemas.UserSignupSchema):
     pass
 
+
 @app.post('/send_otp')
-def send_otp(req: schemas.UserSignupSchema, db: Session = Depends(get_db)):
+async def send_otp(req: schemas.UserSignupSchema, db: Session = Depends(get_db)):
     user_email = req.email
+    existing_user = crud.UsersCrud.find_user_by_email(db, user_email)
+    if existing_user:
+        return JSONResponse({"message": "failed", "desc": "Account is already registered"}, status_code=400)
     sender_email = os.environ.get("GMAIL_USERNAME")
-    sender_password=os.getenv("GMAIL_PASSWORD")
+    sender_password = os.getenv("GMAIL_PASSWORD")
     recipient_email = user_email
     subject = "Hello from High-Notes"
-    otp = random.randint(100000,999999)
+    otp = random.randint(100000, 999999)
     print(otp)
     body = """
     <html>
@@ -164,23 +172,48 @@ def send_otp(req: schemas.UserSignupSchema, db: Session = Depends(get_db)):
         html_message = MIMEText(body, 'html')
         html_message['Subject'] = subject
         html_message['From'] = sender_email
-        html_message['To'] = recipient_email    
+        html_message['To'] = recipient_email
         # with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
         #     server.login(sender_email, sender_password)
         #     server.sendmail(sender_email, recipient_email, html_message.as_string())
-        crud.UsersCrud.record_otp(db, email=recipient_email, otp=otp)
+        await crud.UsersCrud.record_otp(db, email=recipient_email, otp=otp)
         return JSONResponse({"message": "success"}, status_code=200)
     except:
         print(traceback.format_exc())
-        return JSONResponse({"message": "failed"}, status_code=500)
-    
+        return JSONResponse({"message": "failed", "desc": "We have run into an error. Please try later."}, status_code=500)
+
+
 @app.post('/verify_otp')
 def verify_otp(req: schemas.OtpTransactionSchema, db: Session = Depends(get_db)):
     user_email = req.email
     otp = req.otp
-    print(user_email, otp)
-    db_item = crud.UsersCrud.verify_otp(db,user_email, otp)
-    print(db_item)
-    
+    db_item = crud.UsersCrud.verify_otp(db, user_email, otp)
+    try:
+        if db_item is not None:
+            return JSONResponse({"message": "success"}, status_code=200)
+        else:
+            return JSONResponse({"message": "failed", 'desc': "OTP verification failed"}, status_code=400)
+    except:
+        return JSONResponse({"message": "failed", "desc": "We have run into an error. Please try later"}, status_code=500)
 
-    
+
+@app.post('/create_account')
+async def create_account(req: schemas.UserSignupSchema, db: Session = Depends(get_db)):
+    existing_user = crud.UsersCrud.find_user_by_email(db, req.email)
+    if existing_user:
+        return JSONResponse({"message": "failed", "desc": "Account is already registered"}, status_code=400)
+
+    item = await crud.UsersCrud.signup(db, req)
+    response = auth_handler.signJWT(item.id)
+    if 'status_code' in response and response["status_code"] == 403:
+        return JSONResponse({"message": "failed", "desc": response.detail}, status_code=response["status_code"])
+    else:
+        return JSONResponse({"message": "success", "desc": response}, status_code=200)
+
+
+@app.get('/fetch_user_details')
+def fetch_user_details():
+    pass
+
+# https://github.com/testdrivenio/fastapi-jwt/blob/main/app/api.py
+# https://blog.logrocket.com/handling-user-authentication-redux-toolkit/
