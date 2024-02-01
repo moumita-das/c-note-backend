@@ -1,10 +1,11 @@
-from fastapi import FastAPI, Body, Depends
+from fastapi import FastAPI, Body, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from typing import Optional, List
+from typing_extensions import Annotated
 from .db import get_db, engine
 from . import schemas, models, crud
-from .auth import auth_handler
+from .auth import auth_handler, auth_bearer
 
 from sqlalchemy.orm import Session
 
@@ -16,6 +17,7 @@ import re
 from pydub import AudioSegment
 import smtplib
 import random
+from datetime import datetime as dt
 from email.mime.text import MIMEText
 from dotenv import load_dotenv, find_dotenv
 
@@ -47,8 +49,14 @@ app.add_middleware(
 async def main():
     return {"message": "Hello World"}
 
+async def get_current_active_user(request: Request, db: Session = Depends(get_db)):
+    token= await auth_bearer.JWTBearer().__call__(request)
+    decodedToken = auth_handler.decodeJWT(token)
+    current_user = crud.UsersCrud.find_user_by_id(db, decodedToken['user_id'])
+    return current_user if current_user is not None else {} 
 
-@app.post('/fetch_sound_for_strum')
+
+@app.post('/fetch_sound_for_strum', tags=['Songs'])
 def fetch_sound_for_strum(req: schemas.StrumInputSchema):
     strum_pattern = req.pattern
     strum_pattern = strum_pattern.replace('  ', ' ')
@@ -76,14 +84,17 @@ def fetch_sound_for_strum(req: schemas.StrumInputSchema):
     return FileResponse(f"./assets/sound/patterns/" + generatedFile, media_type='audio/wav')
 
 
-@app.post('/save_lyrics_and_chords')
-async def save_lyrics_and_chords(req: schemas.NotesSchema, db: Session = Depends(get_db)):
+@app.post('/save_lyrics_and_chords', tags=['Songs'],dependencies = [Depends(auth_bearer.JWTBearer())])
+async def save_lyrics_and_chords(current_user: Annotated[schemas.UserProfileSchema, Depends(get_current_active_user)], req: schemas.NotesSchema,  db: Session = Depends(get_db)):
     req.chords = ",".join(find_chords_in_song(req.lyrics_chords))
+    print(current_user)
+    req.user_id = current_user.id
+    req.created_date = dt.now()
     await crud.NotesCrud.create(db=db, item=req)
     return JSONResponse({"message": "success"}, status_code=200)
 
 
-@app.get('/fetch_all_saved_chords', response_model=List[schemas.AllNotesSchema])
+@app.get('/fetch_all_saved_chords', tags=['Songs'], response_model=List[schemas.AllNotesSchema])
 def fetch_all_saved_chords(db: Session = Depends(get_db)):
     """
     Get all the Items stored in database
@@ -92,7 +103,7 @@ def fetch_all_saved_chords(db: Session = Depends(get_db)):
     return items
 
 
-@app.get('/fetch_song_by_id', response_model=schemas.NotesSchema)
+@app.get('/fetch_song_by_id', tags=['Songs'], response_model=schemas.NotesSchema)
 def fetch_song_by_id(id: Optional[str] = None, db: Session = Depends(get_db)):
     """
     Get all the Items stored in database
@@ -103,7 +114,7 @@ def fetch_song_by_id(id: Optional[str] = None, db: Session = Depends(get_db)):
     return items[0]
 
 
-def find_chords_in_song(lyrics):
+def find_chords_in_song(lyrics, tags=['Songs']):
     lyrics = json.loads(lyrics)
     known_chords = ["C", "C7", "Cm", "Cm7", "Cdim", "Caug", "C6", "Cmaj7", "C9",
                     "Db", "Db7", "Dbm", "Dbm7", "Dbdim", "Dbaug", "Db6", "Dbmaj7", "Db9",
@@ -142,12 +153,12 @@ def find_chords_in_song(lyrics):
     return chords_arr
 
 
-@app.post('/signup_user')
+@app.post('/signup_user', tags=['Authentication'])
 def signup_user(req: schemas.UserSignupSchema):
     pass
 
 
-@app.post('/send_otp')
+@app.post('/send_otp', tags=['Authentication'])
 async def send_otp(req: schemas.UserSignupSchema, db: Session = Depends(get_db)):
     user_email = req.email
     existing_user = crud.UsersCrud.find_user_by_email(db, user_email)
@@ -173,9 +184,9 @@ async def send_otp(req: schemas.UserSignupSchema, db: Session = Depends(get_db))
         html_message['Subject'] = subject
         html_message['From'] = sender_email
         html_message['To'] = recipient_email
-        # with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-        #     server.login(sender_email, sender_password)
-        #     server.sendmail(sender_email, recipient_email, html_message.as_string())
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, recipient_email, html_message.as_string())
         await crud.UsersCrud.record_otp(db, email=recipient_email, otp=otp)
         return JSONResponse({"message": "success"}, status_code=200)
     except:
@@ -183,7 +194,7 @@ async def send_otp(req: schemas.UserSignupSchema, db: Session = Depends(get_db))
         return JSONResponse({"message": "failed", "desc": "We have run into an error. Please try later."}, status_code=500)
 
 
-@app.post('/verify_otp')
+@app.post('/verify_otp', tags=['Authentication'])
 def verify_otp(req: schemas.OtpTransactionSchema, db: Session = Depends(get_db)):
     user_email = req.email
     otp = req.otp
@@ -197,7 +208,7 @@ def verify_otp(req: schemas.OtpTransactionSchema, db: Session = Depends(get_db))
         return JSONResponse({"message": "failed", "desc": "We have run into an error. Please try later"}, status_code=500)
 
 
-@app.post('/create_account')
+@app.post('/create_account', tags=['Authentication'])
 async def create_account(req: schemas.UserSignupSchema, db: Session = Depends(get_db)):
     existing_user = crud.UsersCrud.find_user_by_email(db, req.email)
     if existing_user:
@@ -211,9 +222,19 @@ async def create_account(req: schemas.UserSignupSchema, db: Session = Depends(ge
         return JSONResponse({"message": "success", "desc": response}, status_code=200)
 
 
-@app.get('/fetch_user_details')
-def fetch_user_details():
-    pass
+@app.post('/login', tags=['Authentication'])
+async def login(req: schemas.UserLoginSchema, db: Session = Depends(get_db)):
+    existing_user = crud.UsersCrud.check_user(db, req.email, req.password)
+    if existing_user:
+        return JSONResponse({"message": "success", "desc": auth_handler.signJWT(existing_user.id)}, status_code=200)
+    else:
+        return JSONResponse({"message": "failed", "desc": "Invalid credentials"}, status_code=400)
+
+
+
+@app.get('/fetch_user_details', tags=['Profile'],dependencies = [Depends(auth_bearer.JWTBearer())], response_model=schemas.UserProfileSchema)
+def fetch_user_details(current_user: Annotated[schemas.UserProfileSchema, Depends(get_current_active_user)]):
+    return current_user
 
 # https://github.com/testdrivenio/fastapi-jwt/blob/main/app/api.py
 # https://blog.logrocket.com/handling-user-authentication-redux-toolkit/

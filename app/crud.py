@@ -6,7 +6,8 @@ from . import models, schemas
 class NotesCrud:
     async def create(db: Session, item: schemas.NotesSchema):
         db_item = models.NotesModel(title=item.title, lyrics_chords=item.lyrics_chords,
-                                    strum=item.strum, capo=item.capo, recording=item.recording, chords=item.chords)
+                                    strum=item.strum, capo=item.capo, recording=item.recording, 
+                                    chords=item.chords, created_date=item.created_date, user_id=item.user_id)
         db.add(db_item)
         db.commit()
         db.refresh(db_item)
@@ -49,5 +50,17 @@ class UsersCrud:
     def find_user_by_email(db: Session, email):
         db_item = db.query(models.UserModel).filter(
             models.UserModel.email == email).first()
+        db.close()
+        return db_item
+    
+    def find_user_by_id(db: Session, id):
+        db_item = db.query(models.UserModel).filter(
+            models.UserModel.id == id).first()
+        db.close()
+        print(db_item)
+        return db_item
+    
+    def check_user(db: Session, email, password):
+        db_item = db.query(models.UserModel).filter(and_((email==models.UserModel.email),(password==models.UserModel.password))).first()
         db.close()
         return db_item
